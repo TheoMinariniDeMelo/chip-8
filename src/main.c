@@ -1,23 +1,11 @@
-#include <SDL2/SDL_events.h>
-#include <SDL2/SDL_render.h>
-#include <SDL2/SDL_rect.h>
-#include <SDL2/SDL_render.h>
-#include <SDL2/SDL_video.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <SDL2/SDL.h>
 #include "./fonts.h"
+#include "./video.h"
 
-#define SAMPLE_RATE 44100
-#define BEEP_FREQ   440.0
-
-#define CHIP8_WIDTH  64
-#define CHIP8_HEIGHT 32
-#define SCALE 10
-#define WIDTH_VIDEO (CHIP8_WIDTH * SCALE)
-#define HEIGHT_VIDEO (CHIP8_HEIGHT * SCALE)
 #define CPU_HZ 500 // how quick the cpu will run
 
 uint16_t keypad[16] = {
@@ -26,43 +14,25 @@ uint16_t keypad[16] = {
     SDLK_c, SDLK_d, SDLK_e, SDLK_f
 };
 
-uint8_t video[CHIP8_WIDTH * CHIP8_HEIGHT];
-uint8_t arr[4096];
-uint16_t stack[16];
-uint8_t reg[16];
-uint16_t I = 0;
-uint8_t delay_timer = 0, sound_timer = 0;
-uint16_t PC = 512;
-uint8_t sp = 0;
+extern uint8_t sound_timer;
+extern uint8_t video[CHIP8_WIDTH * CHIP8_HEIGHT];
+
 Uint32 last_time;
+uint16_t stack[16];
+uint16_t I = 0;
+uint16_t PC = 512;
+uint8_t arr[4096];
+uint8_t reg[16];
+uint8_t delay_timer = 0;
+uint8_t sp = 0;
 
-SDL_Window* window= NULL;
-SDL_Renderer* renderer = NULL;
 
-double phase = 0.0;
 
 int get_keypad_index(uint16_t sym){
     for(int i = 0; i < 16; i++){
         if(keypad[i] == sym) return i;
     }
     return -1;
-}
-
-
-void audio_callback(void *userdata, Uint8 *stream, int len) {
-    Sint16 *buffer = (Sint16 *)stream;
-    int samples = len / sizeof(Sint16);
-
-    for (int i = 0; i < samples; i++) {
-        if (sound_timer > 0) {
-            buffer[i] = (phase < 0.5) ? 8000 : -8000;
-            phase += BEEP_FREQ / SAMPLE_RATE;
-            if (phase >= 1.0)
-                phase -= 1.0;
-        } else {
-            buffer[i] = 0;
-        }
-    }
 }
 
 void update_timers(Uint32 *last_time){
@@ -83,29 +53,6 @@ void load_rom(char* path){
     }
 }
 
-void clear_screen(){
-    memset(video, 0, CHIP8_HEIGHT * CHIP8_WIDTH);
-}
-void draw_screen(){
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    for(int y = 0; y < CHIP8_HEIGHT; y++){
-        for(int x = 0; x < CHIP8_WIDTH; x++){
-            if(video[y * CHIP8_WIDTH + x]){
-                SDL_Rect pixel = {
-                    x * SCALE,
-                    y * SCALE,
-                    SCALE,
-                    SCALE
-                };
-                SDL_RenderFillRect(renderer, &pixel);
-            }
-        }
-    }
-    SDL_RenderPresent(renderer);
-}
 uint16_t fetch(uint16_t address){
     uint16_t op = (arr[address] << 8 | arr[address + 1]);
     return op;
@@ -125,9 +72,7 @@ uint16_t pop(){
     }
     return stack[--sp];
 }
-void getkey(){
 
-}
 void execute(uint16_t op){
     uint8_t A = (op & 0xF000) >> 12;
     uint8_t B = (op & 0x0F00) >> 8;
@@ -345,26 +290,10 @@ int main(int argc, char **argv){
     memcpy(arr + 0x050, chip8_font, 80);
 
     load_rom(argv[1]);
-    SDL_Init(SDL_INIT_EVERYTHING);
+
     last_time = SDL_GetTicks();
-    SDL_AudioSpec want, have;
 
-    SDL_zero(want);
-
-    want.freq = SAMPLE_RATE;
-    want.format = AUDIO_S16SYS;
-    want.channels = 1;
-    want.samples = 1024;
-    want.callback = audio_callback;
-
-    if (SDL_OpenAudio(&want, &have) < 0) {
-        SDL_Log("Erro no audio: %s", SDL_GetError());
-        exit(1);
-    }
-
-    window = SDL_CreateWindow("CHIP-8 Window", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 420, SDL_WINDOW_SHOWN);
-    renderer = SDL_CreateRenderer(window, -1, 0);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    init_sdl();
 
     const int instructions_per_frame = CPU_HZ / 60;
 
